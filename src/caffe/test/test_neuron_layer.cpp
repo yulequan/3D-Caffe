@@ -851,6 +851,61 @@ TYPED_TEST(CuDNNNeuronLayerTest, TestReLUGradientCuDNN) {
       this->blob_top_vec_);
 }
 
+template <typename Dtype>
+class CuDNN3DNeuronLayerTest : public GPUDeviceTest<Dtype> {
+ protected:
+  CuDNN3DNeuronLayerTest()
+      : blob_bottom_(new Blob<Dtype>()),
+        blob_top_(new Blob<Dtype>()) {
+      vector<int> blob_size;
+      blob_size.push_back(6);
+      blob_size.push_back(5);
+      blob_size.push_back(4);
+      blob_size.push_back(3);
+      blob_size.push_back(2);
+      blob_bottom_->Reshape(blob_size);
+      Caffe::set_random_seed(1701);
+      // fill the values
+      FillerParameter filler_param;
+      GaussianFiller<Dtype> filler(filler_param);
+      filler.Fill(this->blob_bottom_);
+      blob_bottom_vec_.push_back(blob_bottom_);
+      blob_top_vec_.push_back(blob_top_);
+  }
+  virtual ~CuDNN3DNeuronLayerTest() { delete blob_bottom_; delete blob_top_; }
+  Blob<Dtype>* const blob_bottom_;
+  Blob<Dtype>* const blob_top_;
+  vector<Blob<Dtype>*> blob_bottom_vec_;
+  vector<Blob<Dtype>*> blob_top_vec_;
+};
+
+TYPED_TEST_CASE(CuDNN3DNeuronLayerTest, TestDtypes);
+
+TYPED_TEST(CuDNN3DNeuronLayerTest, TestReLU3DCuDNN) {
+  LayerParameter layer_param;
+  CuDNNReLULayer<TypeParam> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  layer.Forward(this->blob_bottom_vec_, this->blob_top_vec_);
+  // Now, check values
+  const TypeParam* bottom_data = this->blob_bottom_->cpu_data();
+  const TypeParam* top_data = this->blob_top_->cpu_data();
+  for (int i = 0; i < this->blob_bottom_->count(); ++i) {
+    if ( bottom_data[i] <= 0. ) {
+        EXPECT_EQ(top_data[i],0.);
+    } else {
+        EXPECT_EQ(top_data[i], bottom_data[i]);
+    }
+  }
+}
+
+TYPED_TEST(CuDNN3DNeuronLayerTest, TestReLUGradient3DCuDNN) {
+  LayerParameter layer_param;
+  CuDNNReLULayer<TypeParam> layer(layer_param);
+  GradientChecker<TypeParam> checker(1e-2, 1e-3, 1701, 0., 0.01);
+  checker.CheckGradientEltwise(&layer, this->blob_bottom_vec_,
+                               this->blob_top_vec_);
+}
+
 TYPED_TEST(CuDNNNeuronLayerTest, TestReLUWithNegativeSlopeCuDNN) {
   LayerParameter layer_param;
   CHECK(google::protobuf::TextFormat::ParseFromString(
@@ -871,6 +926,35 @@ TYPED_TEST(CuDNNNeuronLayerTest, TestReLUWithNegativeSlopeCuDNN) {
 }
 
 TYPED_TEST(CuDNNNeuronLayerTest, TestReLUGradientWithNegativeSlopeCuDNN) {
+  LayerParameter layer_param;
+  CHECK(google::protobuf::TextFormat::ParseFromString(
+      "relu_param { negative_slope: 0.01 }", &layer_param));
+  CuDNNReLULayer<TypeParam> layer(layer_param);
+  GradientChecker<TypeParam> checker(1e-2, 1e-3, 1701, 0., 0.01);
+  checker.CheckGradientEltwise(&layer, this->blob_bottom_vec_,
+      this->blob_top_vec_);
+}
+
+TYPED_TEST(CuDNN3DNeuronLayerTest, TestReLUWithNegativeSlope3DCuDNN) {
+  LayerParameter layer_param;
+  CHECK(google::protobuf::TextFormat::ParseFromString(
+      "relu_param { negative_slope: 0.01 }", &layer_param));
+  CuDNNReLULayer<TypeParam> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  layer.Forward(this->blob_bottom_vec_, this->blob_top_vec_);
+  // Now, check values
+  const TypeParam* bottom_data = this->blob_bottom_->cpu_data();
+  const TypeParam* top_data = this->blob_top_->cpu_data();
+  for (int i = 0; i < this->blob_bottom_->count(); ++i) {
+    if (top_data[i] >= 0) {
+      EXPECT_FLOAT_EQ(top_data[i], bottom_data[i]);
+    } else {
+      EXPECT_FLOAT_EQ(top_data[i], bottom_data[i] * 0.01);
+    }
+  }
+}
+
+TYPED_TEST(CuDNN3DNeuronLayerTest, TestReLUGradientWithNegativeSlope3DCuDNN) {
   LayerParameter layer_param;
   CHECK(google::protobuf::TextFormat::ParseFromString(
       "relu_param { negative_slope: 0.01 }", &layer_param));

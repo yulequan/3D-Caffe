@@ -9,7 +9,8 @@
 #include "caffe/common.hpp"
 #include "caffe/layers/hdf5_data_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
-
+#include "caffe/util/vector_helper.hpp"
+#include "caffe/util/hdf5.hpp"
 #include "caffe/test/test_caffe_main.hpp"
 
 namespace caffe {
@@ -133,4 +134,18 @@ TYPED_TEST(HDF5DataLayerTest, TestRead) {
   }
 }
 
+TYPED_TEST(HDF5DataLayerTest, Test_hdf5_get_dataset_shape) {
+  std::string filename = std::string(
+      CMAKE_SOURCE_DIR "caffe/test/test_data/sample_data.h5" CMAKE_EXT);
+  hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  EXPECT_NE( file_id, 0) << "file not found " << filename;
+  std::vector<hsize_t> shape;
+  shape = hdf5_get_dataset_shape(file_id, "data");
+  EXPECT_EQ( "(10,8,6,5)" , toString(shape));
+  shape = hdf5_get_dataset_shape(file_id, "label");
+  EXPECT_EQ( "(10,1)" , toString(shape));
+  herr_t status = H5Fclose(file_id);
+  CHECK_GE(status, 0) << "Failed to close HDF5 file: " << filename;
+
+}
 }  // namespace caffe

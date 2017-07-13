@@ -37,6 +37,13 @@ template <typename Dtype>
 void caffe_copy(const int N, const Dtype *X, Dtype *Y);
 
 template <typename Dtype>
+void caffe_copy_subarray(const Dtype* src_p, const vector<int>& src_shape,
+                         Dtype*       trg_p, const vector<int>& trg_shape,
+                         const vector<int>& src_offset,
+                         const vector<int>& copy_shape,
+                         const vector<int>& trg_offset);
+
+template <typename Dtype>
 void caffe_set(const int N, const Dtype alpha, Dtype *X);
 
 inline void caffe_memset(const size_t N, const int alpha, void* X) {
@@ -85,6 +92,18 @@ void caffe_rng_bernoulli(const int n, const Dtype p, int* r);
 template <typename Dtype>
 void caffe_rng_bernoulli(const int n, const Dtype p, unsigned int* r);
 
+// Returns a random index using an arbitrary cummulative density
+// function. You might want to use caffe_cpu_cumsum() to create this
+// cdf from a given probability density function.
+template <typename Dtype>
+size_t caffe_randi_arbitrary_cdf(const size_t n, const Dtype* cdf);
+
+// Returns a random 3D position using an arbitrary cummulative density
+// function.
+template <typename Dtype>
+void caffe_rand_pos_arbitrary_cdf(const Dtype* cdf, int nz, int ny, int nx,
+                                  int* z, int* y, int* x);
+
 template <typename Dtype>
 void caffe_exp(const int n, const Dtype* a, Dtype* y);
 
@@ -104,6 +123,11 @@ Dtype caffe_cpu_strided_dot(const int n, const Dtype* x, const int incx,
 // Returns the sum of the absolute values of the elements of vector x
 template <typename Dtype>
 Dtype caffe_cpu_asum(const int n, const Dtype* x);
+
+// Returns the cummulative sums of the elements of vector x
+// i.e. y[i] = sum_{j=0...i} x[j]
+template <typename Dtype>
+void caffe_cpu_cumsum(const size_t n, const Dtype* x, Dtype* y);
 
 // the branchless, type-safe version from
 // http://stackoverflow.com/questions/1903954/is-there-a-standard-sign-function-signum-sgn-in-c-c

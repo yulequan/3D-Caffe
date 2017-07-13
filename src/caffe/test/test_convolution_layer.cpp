@@ -856,6 +856,59 @@ class CuDNNConvolutionLayerTest : public GPUDeviceTest<Dtype> {
 
 TYPED_TEST_CASE(CuDNNConvolutionLayerTest, TestDtypes);
 
+template <typename Dtype>
+class CuDNNConvolutionLayerTest3D : public GPUDeviceTest<Dtype> {
+ protected:
+  CuDNNConvolutionLayerTest3D()
+      : blob_bottom_(new Blob<Dtype>(2,3,6,4)),
+        blob_bottom_2_(new Blob<Dtype>(2,3,6,4)),
+        blob_top_(new Blob<Dtype>()),
+        blob_top_2_(new Blob<Dtype>()) {}
+  virtual void SetUp() {
+    // create the blobs
+    vector<int> blob_shape;
+    //blob_shape.push_back(5);
+    blob_shape.push_back(2);
+    blob_shape.push_back(3);
+    blob_shape.push_back(6);
+    blob_shape.push_back(4);
+    blob_shape.push_back(5);
+    blob_bottom_->Reshape(blob_shape);
+    blob_bottom_2_->Reshape(blob_shape);
+    // fill the values
+    FillerParameter filler_param;
+    filler_param.set_value(1.);
+    GaussianFiller<Dtype> filler(filler_param);
+    filler.Fill(this->blob_bottom_);
+    filler.Fill(this->blob_bottom_2_);
+    blob_bottom_vec_.push_back(blob_bottom_);
+    blob_top_vec_.push_back(blob_top_);
+  }
+
+  virtual ~CuDNNConvolutionLayerTest3D() {
+    delete blob_bottom_;
+    delete blob_bottom_2_;
+    delete blob_top_;
+    delete blob_top_2_;
+  }
+
+  virtual Blob<Dtype>* MakeReferenceTop(Blob<Dtype>* top) {
+    this->ref_blob_top_.reset(new Blob<Dtype>());
+    this->ref_blob_top_->ReshapeLike(*top);
+    return this->ref_blob_top_.get();
+  }
+
+  Blob<Dtype>* const blob_bottom_;
+  Blob<Dtype>* const blob_bottom_2_;
+  Blob<Dtype>* const blob_top_;
+  Blob<Dtype>* const blob_top_2_;
+  shared_ptr<Blob<Dtype> > ref_blob_top_;
+  vector<Blob<Dtype>*> blob_bottom_vec_;
+  vector<Blob<Dtype>*> blob_top_vec_;
+};
+
+TYPED_TEST_CASE(CuDNNConvolutionLayerTest3D, TestDtypes);
+
 TYPED_TEST(CuDNNConvolutionLayerTest, TestSetupCuDNN) {
   this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
   this->blob_top_vec_.push_back(this->blob_top_2_);
@@ -893,6 +946,48 @@ TYPED_TEST(CuDNNConvolutionLayerTest, TestSetupCuDNN) {
   EXPECT_EQ(this->blob_top_2_->width(), 1);
 }
 
+TYPED_TEST(CuDNNConvolutionLayerTest3D, TestSetup3DCuDNN) {
+  this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
+  this->blob_top_vec_.push_back(this->blob_top_2_);
+  LayerParameter layer_param;
+  ConvolutionParameter* convolution_param =
+      layer_param.mutable_convolution_param();
+  convolution_param->add_kernel_size(3);
+  convolution_param->add_stride(2);
+  convolution_param->set_num_output(4);
+  this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
+  this->blob_top_vec_.push_back(this->blob_top_2_);
+  shared_ptr<Layer<TypeParam> > layer(
+      new CuDNNConvolutionLayer<TypeParam>(layer_param));
+  layer->SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  EXPECT_EQ(this->blob_top_->shape(0), 2);
+  EXPECT_EQ(this->blob_top_->shape(1), 4);
+  EXPECT_EQ(this->blob_top_->shape(2), 2);
+  EXPECT_EQ(this->blob_top_->shape(3), 1);
+  EXPECT_EQ(this->blob_top_->shape(4), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(0), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(1), 4);
+  EXPECT_EQ(this->blob_top_2_->shape(2), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(3), 1);
+  EXPECT_EQ(this->blob_top_2_->shape(4), 2);
+
+  // setting group should not change the shape
+  convolution_param->set_num_output(3);
+  convolution_param->set_group(3);
+  layer.reset(new CuDNNConvolutionLayer<TypeParam>(layer_param));
+  layer->SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  EXPECT_EQ(this->blob_top_->shape(0), 2);
+  EXPECT_EQ(this->blob_top_->shape(1), 3);
+  EXPECT_EQ(this->blob_top_->shape(2), 2);
+  EXPECT_EQ(this->blob_top_->shape(3), 1);
+  EXPECT_EQ(this->blob_top_->shape(4), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(0), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(1), 3);
+  EXPECT_EQ(this->blob_top_2_->shape(2), 2);
+  EXPECT_EQ(this->blob_top_2_->shape(3), 1);
+  EXPECT_EQ(this->blob_top_2_->shape(4), 2);
+}
+
 TYPED_TEST(CuDNNConvolutionLayerTest, TestSimpleConvolutionCuDNN) {
   this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
   this->blob_top_vec_.push_back(this->blob_top_2_);
@@ -928,7 +1023,69 @@ TYPED_TEST(CuDNNConvolutionLayerTest, TestSimpleConvolutionCuDNN) {
   }
 }
 
+TYPED_TEST(CuDNNConvolutionLayerTest3D, TestSimpleConvolution3DCuDNN) {
+  this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
+  this->blob_top_vec_.push_back(this->blob_top_2_);
+  LayerParameter layer_param;
+  ConvolutionParameter* convolution_param =
+      layer_param.mutable_convolution_param();
+  convolution_param->add_kernel_size(3);
+  convolution_param->add_stride(2);
+  convolution_param->set_num_output(4);
+  convolution_param->mutable_weight_filler()->set_type("gaussian");
+  convolution_param->mutable_bias_filler()->set_type("constant");
+  convolution_param->mutable_bias_filler()->set_value(0.1);
+  shared_ptr<Layer<TypeParam> > layer(
+      new CuDNNConvolutionLayer<TypeParam>(layer_param));
+  layer->SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  layer->Forward(this->blob_bottom_vec_, this->blob_top_vec_);
+  // Check against reference convolution.
+  const TypeParam* top_data;
+  const TypeParam* ref_top_data;
+  caffe_conv(this->blob_bottom_, convolution_param, layer->blobs(),
+      this->MakeReferenceTop(this->blob_top_));
+  top_data = this->blob_top_->cpu_data();
+  ref_top_data = this->ref_blob_top_->cpu_data();
+  for (int i = 0; i < this->blob_top_->count(); ++i) {
+    EXPECT_NEAR(top_data[i], ref_top_data[i], 1e-4);
+  }
+  caffe_conv(this->blob_bottom_2_, convolution_param, layer->blobs(),
+      this->MakeReferenceTop(this->blob_top_2_));
+  top_data = this->blob_top_2_->cpu_data();
+  ref_top_data = this->ref_blob_top_->cpu_data();
+  for (int i = 0; i < this->blob_top_->count(); ++i) {
+    EXPECT_NEAR(top_data[i], ref_top_data[i], 1e-4);
+  }
+}
+
 TYPED_TEST(CuDNNConvolutionLayerTest, TestSimpleConvolutionGroupCuDNN) {
+  LayerParameter layer_param;
+  ConvolutionParameter* convolution_param =
+      layer_param.mutable_convolution_param();
+  convolution_param->add_kernel_size(3);
+  convolution_param->add_stride(2);
+  convolution_param->set_num_output(3);
+  convolution_param->set_group(3);
+  convolution_param->mutable_weight_filler()->set_type("gaussian");
+  convolution_param->mutable_bias_filler()->set_type("constant");
+  convolution_param->mutable_bias_filler()->set_value(0.1);
+  shared_ptr<Layer<TypeParam> > layer(
+      new CuDNNConvolutionLayer<TypeParam>(layer_param));
+  layer->SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  layer->Forward(this->blob_bottom_vec_, this->blob_top_vec_);
+  // Check against reference convolution.
+  const TypeParam* top_data;
+  const TypeParam* ref_top_data;
+  caffe_conv(this->blob_bottom_, convolution_param, layer->blobs(),
+      this->MakeReferenceTop(this->blob_top_));
+  top_data = this->blob_top_->cpu_data();
+  ref_top_data = this->ref_blob_top_->cpu_data();
+  for (int i = 0; i < this->blob_top_->count(); ++i) {
+    EXPECT_NEAR(top_data[i], ref_top_data[i], 1e-4);
+  }
+}
+
+ TYPED_TEST(CuDNNConvolutionLayerTest3D, TestSimpleConvolutionGroup3DCuDNN) {
   LayerParameter layer_param;
   ConvolutionParameter* convolution_param =
       layer_param.mutable_convolution_param();
@@ -1065,7 +1222,40 @@ TYPED_TEST(CuDNNConvolutionLayerTest, TestGradientCuDNN) {
       this->blob_top_vec_);
 }
 
+TYPED_TEST(CuDNNConvolutionLayerTest3D, TestGradient3DCuDNN) {
+  LayerParameter layer_param;
+  ConvolutionParameter* convolution_param =
+      layer_param.mutable_convolution_param();
+  this->blob_bottom_vec_.push_back(this->blob_bottom_2_);
+  this->blob_top_vec_.push_back(this->blob_top_2_);
+  convolution_param->add_kernel_size(3);
+  convolution_param->add_stride(2);
+  convolution_param->set_num_output(2);
+  convolution_param->mutable_weight_filler()->set_type("gaussian");
+  convolution_param->mutable_bias_filler()->set_type("gaussian");
+  CuDNNConvolutionLayer<TypeParam> layer(layer_param);
+  GradientChecker<TypeParam> checker(1e-2, 1e-3);
+  checker.CheckGradientExhaustive(&layer, this->blob_bottom_vec_,
+      this->blob_top_vec_);
+}
+
 TYPED_TEST(CuDNNConvolutionLayerTest, TestGradientGroupCuDNN) {
+  LayerParameter layer_param;
+  ConvolutionParameter* convolution_param =
+      layer_param.mutable_convolution_param();
+  convolution_param->add_kernel_size(3);
+  convolution_param->add_stride(2);
+  convolution_param->set_num_output(3);
+  convolution_param->set_group(3);
+  convolution_param->mutable_weight_filler()->set_type("gaussian");
+  convolution_param->mutable_bias_filler()->set_type("gaussian");
+  CuDNNConvolutionLayer<TypeParam> layer(layer_param);
+  GradientChecker<TypeParam> checker(1e-2, 1e-3);
+  checker.CheckGradientExhaustive(&layer, this->blob_bottom_vec_,
+      this->blob_top_vec_);
+}
+
+TYPED_TEST(CuDNNConvolutionLayerTest3D, TestGradientGroup3DCuDNN) {
   LayerParameter layer_param;
   ConvolutionParameter* convolution_param =
       layer_param.mutable_convolution_param();

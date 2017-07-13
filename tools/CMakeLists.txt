@@ -9,6 +9,10 @@ foreach(source ${srcs})
   if(name MATCHES "caffe")
     set(name ${name}.bin)
   endif()
+  # caffe_unet target already exits
+  if(name MATCHES "caffe_unet")
+    set(name ${name}.bin)
+  endif()
 
   # target
   add_executable(${name} ${source})
@@ -22,6 +26,9 @@ foreach(source ${srcs})
   # restore output name without suffix
   if(name MATCHES "caffe.bin")
     set_target_properties(${name} PROPERTIES OUTPUT_NAME caffe)
+  endif()
+  if(name MATCHES "caffe_unet.bin")
+    set_target_properties(${name} PROPERTIES OUTPUT_NAME caffe_unet)
   endif()
 
   # Install

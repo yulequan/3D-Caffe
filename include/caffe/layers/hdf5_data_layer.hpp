@@ -29,9 +29,9 @@ class HDF5DataLayer : public Layer<Dtype> {
       const vector<Blob<Dtype>*>& top);
   // Data layers should be shared by multiple solvers in parallel
   virtual inline bool ShareInParallel() const { return true; }
-  // Data layers have no bottoms, so reshaping is trivial.
+  // Reshaping according to loaded HDF5 shape (could vary during training)
   virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top) {}
+      const vector<Blob<Dtype>*>& top);
 
   virtual inline const char* type() const { return "HDF5Data"; }
   virtual inline int ExactNumBottomBlobs() const { return 0; }
@@ -50,6 +50,9 @@ class HDF5DataLayer : public Layer<Dtype> {
 
   std::vector<std::string> hdf_filenames_;
   unsigned int num_files_;
+  std::vector<std::vector<hsize_t> > dataset_shapes_;
+  bool files_have_consistent_shapes_;
+  bool hdf_blobs_divisible_by_batch_size_;
   unsigned int current_file_;
   hsize_t current_row_;
   std::vector<shared_ptr<Blob<Dtype> > > hdf_blobs_;

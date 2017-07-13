@@ -82,6 +82,15 @@ void hdf5_load_nd_dataset<double>(hid_t file_id, const char* dataset_name_,
 }
 
 template <>
+void hdf5_load_nd_dataset<int>(hid_t file_id, const char* dataset_name_,
+        int min_dim, int max_dim, Blob<int>* blob) {
+  hdf5_load_nd_dataset_helper(file_id, dataset_name_, min_dim, max_dim, blob);
+  herr_t status = H5LTread_dataset_int(
+    file_id, dataset_name_, blob->mutable_cpu_data());
+  CHECK_GE(status, 0) << "Failed to read int dataset " << dataset_name_;
+}
+
+template <>
 void hdf5_save_nd_dataset<float>(
     const hid_t file_id, const string& dataset_name, const Blob<float>& blob,
     bool write_diff) {
@@ -157,10 +166,32 @@ int hdf5_load_int(hid_t loc_id, const string& dataset_name) {
 
 void hdf5_save_int(hid_t loc_id, const string& dataset_name, int i) {
   hsize_t one = 1;
-  herr_t status = \
+  herr_t status =
     H5LTmake_dataset_int(loc_id, dataset_name.c_str(), 1, &one, &i);
   CHECK_GE(status, 0)
     << "Failed to save int dataset with name " << dataset_name;
+}
+
+std::vector<int> hdf5_load_int_vec(hid_t loc_id, const string &dataset_name) {
+  std::vector<hsize_t> dsShape(
+      hdf5_get_dataset_shape(loc_id, dataset_name.c_str()));
+  CHECK_EQ(dsShape.size(), 1)
+      << "Could not load " << dataset_name << " into 1-D vector";
+  std::vector<int> res(dsShape[0]);
+  herr_t status =
+      H5LTread_dataset_int(loc_id, dataset_name.c_str(), res.data());
+  CHECK_GE(status, 0)
+    << "Failed to load vectorial int dataset with name " << dataset_name;
+  return res;
+}
+
+void hdf5_save_int_vec(
+    hid_t loc_id, const string &dataset_name, std::vector<int> vec) {
+  hsize_t size = vec.size();
+  herr_t status = H5LTmake_dataset_int(
+      loc_id, dataset_name.c_str(), 1, &size, vec.data());
+  CHECK_GE(status, 0)
+      << "Failed to save vectorial int dataset with name " << dataset_name;
 }
 
 int hdf5_get_num_links(hid_t loc_id) {
@@ -183,5 +214,19 @@ string hdf5_get_name_by_idx(hid_t loc_id, int idx) {
   delete[] c_str;
   return result;
 }
+
+std::vector<hsize_t> hdf5_get_dataset_shape(
+    hid_t file_id, const char* dataset_name) {
+  // get number of dimensions
+  herr_t status;
+  int ndims;
+  status = H5LTget_dataset_ndims(file_id, dataset_name, &ndims);
+  std::vector<hsize_t> dims(ndims);
+  status = H5LTget_dataset_info(
+      file_id, dataset_name, dims.data(), NULL, NULL);
+  CHECK_GE(status, 0) << "Failed to get dataset info for " << dataset_name;
+  return dims;
+}
+
 
 }  // namespace caffe

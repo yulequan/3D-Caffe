@@ -27,6 +27,15 @@ message BlobProtoVector {
   repeated BlobProto blobs = 1;
 }
 
+// some Vectors
+message VectorFloat {
+  repeated float v = 1 [packed = true];
+}
+
+message VectorInt32 {
+  repeated int32 v = 1 [packed = true];
+}
+
 message Datum {
   optional int32 channels = 1;
   optional int32 height = 2;
@@ -359,12 +368,14 @@ message LayerParameter {
   // engine parameter for selecting the implementation.
   // The default for the engine is set by the ENGINE switch at compile-time.
   optional AccuracyParameter accuracy_param = 102;
+  optional ApplyDeformationParameter apply_deformation_param = 146;
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
   optional BiasParameter bias_param = 141;
   optional ConcatParameter concat_param = 104;
   optional ContrastiveLossParameter contrastive_loss_param = 105;
   optional ConvolutionParameter convolution_param = 106;
+  optional CreateDeformationParameter create_deformation_param = 145;
   optional CropParameter crop_param = 144;
   optional DataParameter data_param = 107;
   optional DropoutParameter dropout_param = 108;
@@ -400,6 +411,8 @@ message LayerParameter {
   optional TanHParameter tanh_param = 127;
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
+  optional ValueAugmentationParameter value_augmentation_param = 147;
+  optional ValueTransformationParameter value_transformation_param = 148;
   optional WindowDataParameter window_data_param = 129;
 }
 
@@ -471,6 +484,16 @@ message AccuracyParameter {
 
   // If specified, ignore instances with the given label.
   optional int32 ignore_label = 3;
+}
+
+// Message that stores parameters used by ApplyDeformationLayer
+message ApplyDeformationParameter {
+  // interpolation type ("linear" or "nearest")
+  optional string interpolation = 1 [default = "linear"];
+  // extrapolation type ("mirror" or "zero")
+  optional string extrapolation = 2 [default = "mirror"];
+  // get output shape from other blob
+  optional string output_shape_from = 3 [default = ""];
 }
 
 message ArgMaxParameter {
@@ -602,6 +625,52 @@ message ConvolutionParameter {
   // implementation; for input blobs with num_axes != 2, this option is
   // ignored and the ND implementation will be used.)
   optional bool force_nd_im2col = 17 [default = false];
+}
+
+// Message that stores parameters used by CreateDeformationLayer
+message CreateDeformationParameter {
+  // Specify relative voxel element_size in z-direction.
+  // Needed for rotation
+  optional float voxel_relsize_z = 1 [default = 1];
+  // wanted output shape:
+  optional uint32 batch_size = 2 [default = 1];
+  optional uint32 nz = 3 [default = 0];
+  optional uint32 ny = 4 [default = 0];
+  optional uint32 nx = 5 [default = 0];
+  optional uint32 ncomponents = 6 [default = 2];
+  // control point grid for random elastic transformation
+  // spacing in pixels
+  optional VectorInt32 random_elastic_grid_spacing = 7;
+  // magnitude for random elastic transformation (normal distribution)
+  // sigma in pixels
+  optional VectorFloat random_elastic_deform_magnitude = 8;
+  // random rotation (uniform distribution)
+  // rotation axis is center of the output blob
+  // for 2D: rot_z  (rotation around the z-axis)
+  // for 3D: rot_z, rot_y, rot_x (rotation around the z, y and x-axis)
+  optional VectorFloat random_rotate_from = 9;
+  optional VectorFloat random_rotate_to = 10;
+  // random offset (uniform distribution) in pixels
+  // (zero offset means, that the output image is centered on the input image)
+  // for 2D: y, x
+  // for 3D: z, y, x
+  optional VectorFloat random_offset_from = 11;
+  optional VectorFloat random_offset_to = 12;
+  // compute the offset range from the input blob, such that the
+  // central pixel of the output is within the input blob, i.e.
+  // offset_from = -(input_shape-1)/2 and offset_to = (input_shape-1)/2
+  optional bool random_offset_range_from_in_blob_shape = 13 [default = false];
+  // draw the random offset (location of central pixel of the
+  // output) using a given probability map. I.e. pixels with
+  // probability 0 will never be chosen
+  optional bool random_offset_range_from_pdf = 14 [default = false];
+  // draw random offset according to the ignore label in the label
+  // map. I.e. pixels with ignore label will never be chosen
+  optional uint32 random_offset_range_from_ignore_label = 15;
+  // random mirror flag (1: this axis should be randomly mirrored)
+  // for 2D: y, x
+  // for 3D: z, y, x
+  optional VectorInt32 random_mirror_flag = 16;
 }
 
 message CropParameter {
@@ -754,6 +823,8 @@ message HDF5DataParameter {
 
 message HDF5OutputParameter {
   optional string file_name = 1;
+  repeated string dset_name = 2;
+  optional bool squeeze = 3 [default = false];
 }
 
 message HingeLossParameter {
@@ -881,16 +952,20 @@ message PoolingParameter {
   }
   optional PoolMethod pool = 1 [default = MAX]; // The pooling method
   // Pad, kernel size, and stride are all given as a single value for equal
-  // dimensions in height and width or as Y, X pairs.
-  optional uint32 pad = 4 [default = 0]; // The padding size (equal in Y, X)
-  optional uint32 pad_h = 9 [default = 0]; // The padding height
-  optional uint32 pad_w = 10 [default = 0]; // The padding width
-  optional uint32 kernel_size = 2; // The kernel size (square)
-  optional uint32 kernel_h = 5; // The kernel height
-  optional uint32 kernel_w = 6; // The kernel width
-  optional uint32 stride = 3 [default = 1]; // The stride (equal in Y, X)
-  optional uint32 stride_h = 7; // The stride height
-  optional uint32 stride_w = 8; // The stride width
+  // dimensions in all spatial dimensions, or once per spatial dimension.
+  repeated uint32 pad = 2; // The padding size defaults to 0
+  repeated uint32 kernel_size = 3; // The kernel size (square)
+  repeated uint32 stride = 4; // defaults to 1
+
+  // For 2D pooling only, the *_h and *_w versions may also be used to
+  // specify both spatial dimensions.
+  optional uint32 pad_h = 5 [default = 0]; // The padding height (2D only)
+  optional uint32 pad_w = 6 [default = 0]; // The padding width (2D only)
+  optional uint32 kernel_h = 7; // The kernel height (2D only)
+  optional uint32 kernel_w = 8; // The kernel width (2D only)
+  optional uint32 stride_h = 9; // The stride height (2D only)
+  optional uint32 stride_w = 10; // The stride width (2D only)
+
   enum Engine {
     DEFAULT = 0;
     CAFFE = 1;
@@ -900,6 +975,10 @@ message PoolingParameter {
   // If global_pooling then it will pool over the size of the bottom by doing
   // kernel_h = bottom->height and kernel_w = bottom->width
   optional bool global_pooling = 12 [default = false];
+  // The axis to interpret as "channels" when performing pooling.
+  // Preceding dimensions are treated as independent inputs;
+  // succeeding dimensions are treated as "spatial".
+  optional int32 axis = 13 [default = 1];
 }
 
 message PowerParameter {
@@ -1125,6 +1204,50 @@ message TileParameter {
 // Message that stores parameters used by ThresholdLayer
 message ThresholdParameter {
   optional float threshold = 1 [default = 0]; // Strictly positive values
+}
+
+// Message that stores parameters used by ValueAugmentationLayer
+message ValueAugmentationParameter {
+
+  // new black level:
+  // i.e. input 0 is mapped to this value
+  // range for uniform random number
+  optional float black_from = 1 [default = 0];
+  optional float black_to   = 2 [default = 0];
+
+  // new white level:
+  // i.e. input 1 is mapped to this value
+
+  // range for uniform random number
+  optional float white_from = 3 [default = 1];
+  optional float white_to   = 4 [default = 1];
+
+  // minimal and maximal slope of lookup curve
+  optional float slope_min = 5 [default = 0.666];
+  optional float slope_max = 6 [default = 1.5];
+
+  // number of control point insertions, i.e.
+  // 0 --> two control points (for black and white)
+  // 1 --> 3 control points
+  // 2 --> 5 control points
+  // 3 --> 9 control points
+  // ...
+  optional int32 n_control_point_insertions = 7 [default = 2];
+
+  // size of lookup table
+  optional int32 lut_size = 8 [default = 256];
+}
+
+// Message that stores parameters used by ValueTransformationLayer
+message ValueTransformationParameter {
+  // Per channel offset which is added to the original channels
+  // Pass one float to add the same value to all channels, pass nChannels
+  // floats to add individual offsets for each channel
+  optional VectorFloat offset = 1;
+  // Per channel scale that is applied after adding the offset
+  // One value: apply same scale to all channels, nChannels values: apply
+  // individual scale per layer
+  optional VectorFloat scale = 2;
 }
 
 message WindowDataParameter {

@@ -27,6 +27,9 @@ void hdf5_save_nd_dataset(
 
 int hdf5_load_int(hid_t loc_id, const string& dataset_name);
 void hdf5_save_int(hid_t loc_id, const string& dataset_name, int i);
+std::vector<int> hdf5_load_int_vec(hid_t loc_id, const string &dataset_name);
+void hdf5_save_int_vec(
+    hid_t loc_id, const string &dataset_name, std::vector<int> vec);
 string hdf5_load_string(hid_t loc_id, const string& dataset_name);
 void hdf5_save_string(hid_t loc_id, const string& dataset_name,
                       const string& s);
@@ -34,6 +37,8 @@ void hdf5_save_string(hid_t loc_id, const string& dataset_name,
 int hdf5_get_num_links(hid_t loc_id);
 string hdf5_get_name_by_idx(hid_t loc_id, int idx);
 
+std::vector<hsize_t> hdf5_get_dataset_shape(
+    hid_t file_id, const char* dataset_name);
 }  // namespace caffe
 
 #endif   // CAFFE_UTIL_HDF5_H_

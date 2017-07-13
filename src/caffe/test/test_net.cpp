@@ -617,6 +617,36 @@ class NetTest : public MultiDeviceTest<TypeParam> {
     InitNetFromProtoString(proto);
   }
 
+  virtual void InitReshapableNet2() {
+    const string& proto =
+        "name: 'ReshapableNetwork' "
+        "layer {"
+        "name: 'data'"
+        "type: 'Input'"
+        "top: 'data'"
+        "input_param {"
+        "        shape {"
+        "        dim: 1"
+        "        dim: 3"
+        "        dim: 100"
+        "        dim: 100"
+        "        }"
+        "    }"
+        "}"
+        "layer { "
+        "  name: 'pool1' "
+        "  type: 'Pooling' "
+        "  bottom: 'data' "
+        "  top: 'pool1' "
+        "  pooling_param { "
+        "    pool: MAX "
+        "    kernel_size: 2 "
+        "    stride: 2 "
+        "  } "
+        "} ";
+    InitNetFromProtoString(proto);
+  }
+
   virtual void InitSkipPropNet(bool test_skip_true) {
     string proto =
       "name: 'SkipPropTestNetwork' "
@@ -2360,6 +2390,78 @@ TYPED_TEST(NetTest, TestReshape) {
       blob2.width());
   caffe_copy(blob2.count(), blob2.cpu_data(), input_blob->mutable_cpu_data());
   this->net_->Forward();
+  this->net_->Backward();
+  for (int i = 0; i < output2.count(); ++i) {
+    EXPECT_FLOAT_EQ(*(output2.cpu_data() + i), *(output_blob->cpu_data() + i));
+  }
+
+  EXPECT_EQ(output1.num(), blob1.num());
+  EXPECT_EQ(output2.num(), blob2.num());
+  bool same_spatial_shape = true;
+  const int kFirstSpatialAxis = 2;
+  for (int i = kFirstSpatialAxis; i < output1.num_axes(); ++i) {
+    if (output1.shape(i) != output2.shape(i)) {
+      same_spatial_shape = false;
+      break;
+    }
+  }
+  EXPECT_FALSE(same_spatial_shape);
+}
+
+TYPED_TEST(NetTest, TestReshape2) {
+  typedef typename TypeParam::Dtype Dtype;
+  // We set up bottom blobs of two different sizes, switch between
+  // them, check that forward and backward both run and the results
+  // are the same, and check that the output shapes change.
+  Caffe::set_random_seed(this->seed_);
+  Caffe::set_mode(Caffe::CPU);
+  FillerParameter filler_param;
+  filler_param.set_std(1);
+  GaussianFiller<Dtype> filler(filler_param);
+  // Check smaller shape first as larger first could hide realloc failures.
+  Blob<Dtype> blob1(2, 3, 12, 10);
+  Blob<Dtype> blob2(4, 3, 9, 11);
+  ASSERT_LT(blob1.count(), blob2.count());
+  filler.Fill(&blob1);
+  filler.Fill(&blob2);
+
+  this->InitReshapableNet2();
+  Blob<Dtype>* input_blob = this->net_->input_blobs()[0];
+  Blob<Dtype>* output_blob = this->net_->output_blobs()[0];
+  input_blob->Reshape(blob1.num(), blob1.channels(), blob1.height(),
+      blob1.width());
+  caffe_copy(blob1.count(), blob1.cpu_data(), input_blob->mutable_cpu_data());
+  this->net_->ForwardPrefilled();
+  // call backward just to make sure it runs
+  this->net_->Backward();
+  Blob<Dtype> output1(output_blob->num(), output_blob->channels(),
+      output_blob->height(), output_blob->width());
+  caffe_copy(output1.count(), output_blob->cpu_data(),
+      output1.mutable_cpu_data());
+
+  input_blob->Reshape(blob2.num(), blob2.channels(), blob2.height(),
+      blob2.width());
+  caffe_copy(blob2.count(), blob2.cpu_data(), input_blob->mutable_cpu_data());
+  this->net_->ForwardPrefilled();
+  this->net_->Backward();
+  Blob<Dtype> output2(output_blob->num(), output_blob->channels(),
+      output_blob->height(), output_blob->width());
+  caffe_copy(output2.count(), output_blob->cpu_data(),
+      output2.mutable_cpu_data());
+
+  input_blob->Reshape(blob1.num(), blob1.channels(), blob1.height(),
+      blob1.width());
+  caffe_copy(blob1.count(), blob1.cpu_data(), input_blob->mutable_cpu_data());
+  this->net_->ForwardPrefilled();
+  this->net_->Backward();
+  for (int i = 0; i < output1.count(); ++i) {
+    EXPECT_FLOAT_EQ(*(output1.cpu_data() + i), *(output_blob->cpu_data() + i));
+  }
+
+  input_blob->Reshape(blob2.num(), blob2.channels(), blob2.height(),
+      blob2.width());
+  caffe_copy(blob2.count(), blob2.cpu_data(), input_blob->mutable_cpu_data());
+  this->net_->ForwardPrefilled();
   this->net_->Backward();
   for (int i = 0; i < output2.count(); ++i) {
     EXPECT_FLOAT_EQ(*(output2.cpu_data() + i), *(output_blob->cpu_data() + i));

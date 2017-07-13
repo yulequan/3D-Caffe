@@ -65,6 +65,7 @@ void caffe_set(const int N, const Dtype alpha, Dtype* Y) {
 }
 
 template void caffe_set<int>(const int N, const int alpha, int* Y);
+template void caffe_set<unsigned int>(const int N, const unsigned int alpha, unsigned int* Y);
 template void caffe_set<float>(const int N, const float alpha, float* Y);
 template void caffe_set<double>(const int N, const double alpha, double* Y);
 
@@ -97,12 +98,91 @@ void caffe_copy(const int N, const Dtype* X, Dtype* Y) {
     }
   }
 }
-
 template void caffe_copy<int>(const int N, const int* X, int* Y);
 template void caffe_copy<unsigned int>(const int N, const unsigned int* X,
     unsigned int* Y);
 template void caffe_copy<float>(const int N, const float* X, float* Y);
 template void caffe_copy<double>(const int N, const double* X, double* Y);
+
+
+template <typename Dtype>
+void caffe_copy_subarray(const Dtype* src_p, const vector<int>& src_shape,
+                         Dtype*       trg_p, const vector<int>& trg_shape,
+                         const vector<int>& src_offset,
+                         const vector<int>& copy_shape,
+                         const vector<int>& trg_offset) {
+//  std::cout << "copy_subarray called with \n"
+//            << "src_shape=" << toString( src_shape) << "\n"
+//            << "trg_shape=" << toString( trg_shape) << "\n"
+//            << "src_offset=" << toString( src_offset) << "\n"
+//            << "copy_shape=" << toString( copy_shape) << "\n"
+//            << "trg_offset=" << toString( trg_offset) << "\n";
+  int num_axes = src_shape.size();
+  CHECK_LT(num_axes, 10) << "only 10 axes are supported";
+  CHECK_EQ(src_shape.size(), trg_shape.size()) << "target must have same number of axes";
+  CHECK_EQ(src_shape.size(), src_offset.size());
+  CHECK_EQ(src_shape.size(), copy_shape.size());
+  CHECK_EQ(src_shape.size(), trg_offset.size());
+
+  int N[10];   // copy shape
+  int so[10];  // src offset
+  int to[10];  // trg offset
+  int ss[10];  // src stride
+  int ts[10];  // trg stride
+  int axes_offset = 10 - num_axes;
+  for (int i = 0; i < axes_offset; ++i) {
+    N[i] = 1;
+    so[i] = 0;
+    to[i] = 0;
+    ss[i] = 0;  // dummy value, will be multiplied with zero anyway
+    ts[i] = 0;  // dummy value, will be multiplied with zero anyway
+  }
+
+  for (int i = 0; i < num_axes; ++i) {
+    N[ axes_offset + i] = copy_shape[i];
+    so[axes_offset + i] = src_offset[i];
+    to[axes_offset + i] = trg_offset[i];
+  }
+
+  ss[9] = 1;
+  ts[9] = 1;
+  for (int i = num_axes-1; i > 0; --i) {
+    ss[axes_offset + i - 1] = src_shape[i] * ss[axes_offset + i];
+    ts[axes_offset + i - 1] = trg_shape[i] * ts[axes_offset + i];
+  }
+//  std::cout << "resulting 10d vectors\n"
+//            << "N=" << toString(N,10) << "\n"
+//            << "so=" << toString(so,10) << "\n"
+//            << "to=" << toString(to,10) << "\n"
+//            << "ss=" << toString(ss,10) << "\n"
+//            << "ts=" << toString(ts,10) << "\n";
+
+  int copy_nelem = N[9];
+  for (                int i0 = 0; i0 < N[0]; ++i0) { int s0  =      ss[0] * (i0 + so[0]); int t0 =      ts[0] * (i0 + to[0]);
+    for (              int i1 = 0; i1 < N[1]; ++i1) { int s1  = s0 + ss[1] * (i1 + so[1]); int t1 = t0 + ts[1] * (i1 + to[1]);
+      for (            int i2 = 0; i2 < N[2]; ++i2) { int s2  = s1 + ss[2] * (i2 + so[2]); int t2 = t1 + ts[2] * (i2 + to[2]);
+        for (          int i3 = 0; i3 < N[3]; ++i3) { int s3  = s2 + ss[3] * (i3 + so[3]); int t3 = t2 + ts[3] * (i3 + to[3]);
+          for (        int i4 = 0; i4 < N[4]; ++i4) { int s4  = s3 + ss[4] * (i4 + so[4]); int t4 = t3 + ts[4] * (i4 + to[4]);
+            for (      int i5 = 0; i5 < N[5]; ++i5) { int s5  = s4 + ss[5] * (i5 + so[5]); int t5 = t4 + ts[5] * (i5 + to[5]);
+              for (    int i6 = 0; i6 < N[6]; ++i6) { int s6  = s5 + ss[6] * (i6 + so[6]); int t6 = t5 + ts[6] * (i6 + to[6]);
+                for (  int i7 = 0; i7 < N[7]; ++i7) { int s7  = s6 + ss[7] * (i7 + so[7]); int t7 = t6 + ts[7] * (i7 + to[7]);
+                  for (int i8 = 0; i8 < N[8]; ++i8) { int s8  = s7 + ss[8] * (i8 + so[8]); int t8 = t7 + ts[8] * (i8 + to[8]);
+                    caffe_copy(copy_nelem, src_p + s8 + so[9], trg_p + t8 + to[9]);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+template void caffe_copy_subarray<int>(         const int*          src_p, const vector<int>& src_shape, int*          trg_p, const vector<int>& trg_shape, const vector<int>& src_offset, const vector<int>& copy_shape, const vector<int>& trg_offset);
+template void caffe_copy_subarray<unsigned int>(const unsigned int* src_p, const vector<int>& src_shape, unsigned int* trg_p, const vector<int>& trg_shape, const vector<int>& src_offset, const vector<int>& copy_shape, const vector<int>& trg_offset);
+template void caffe_copy_subarray<float>(       const float*        src_p, const vector<int>& src_shape, float*        trg_p, const vector<int>& trg_shape, const vector<int>& src_offset, const vector<int>& copy_shape, const vector<int>& trg_offset);
+template void caffe_copy_subarray<double>(      const double*       src_p, const vector<int>& src_shape, double*       trg_p, const vector<int>& trg_shape, const vector<int>& src_offset, const vector<int>& copy_shape, const vector<int>& trg_offset);
 
 template <>
 void caffe_scal<float>(const int N, const float alpha, float *X) {
@@ -325,6 +405,41 @@ void caffe_rng_bernoulli<double>(const int n, const double p, unsigned int* r);
 template
 void caffe_rng_bernoulli<float>(const int n, const float p, unsigned int* r);
 
+template <typename Dtype>
+size_t caffe_randi_arbitrary_cdf(const size_t n, const Dtype* cdf) {
+  CHECK_GT(n, 0);
+  CHECK(cdf);
+  Dtype maxValue = cdf[n-1];
+  Dtype r;
+  caffe_rng_uniform( 1, Dtype(0), maxValue, &r);
+  const Dtype* p = std::lower_bound( cdf, cdf + n, r);
+  return p - cdf;
+}
+
+template
+size_t caffe_randi_arbitrary_cdf(const size_t n, const float* cdf);
+
+template
+size_t caffe_randi_arbitrary_cdf(const size_t n, const double* cdf);
+
+template <typename Dtype>
+void caffe_rand_pos_arbitrary_cdf(const Dtype* cdf, int nz, int ny, int nx,
+                                  int* z, int* y, int* x) {
+  // sample a random index and map it to coordinates
+  size_t idx = caffe_randi_arbitrary_cdf( nz * ny * nx, cdf);
+  *z = idx / (ny * nx);
+  idx = idx - *z * ny * nx;
+  *y = idx / nx;
+  *x = idx - *y * nx;
+}
+
+template
+void caffe_rand_pos_arbitrary_cdf(const float* cdf, int nz, int ny, int nx,
+                                  int* z, int* y, int* x);
+template
+void caffe_rand_pos_arbitrary_cdf(const double* cdf, int nz, int ny, int nx,
+                                  int* z, int* y, int* x);
+
 template <>
 float caffe_cpu_strided_dot<float>(const int n, const float* x, const int incx,
     const float* y, const int incy) {
@@ -357,6 +472,25 @@ template <>
 double caffe_cpu_asum<double>(const int n, const double* x) {
   return cblas_dasum(n, x, 1);
 }
+
+template <typename Dtype>
+void caffe_cpu_cumsum(const size_t n, const Dtype* x, Dtype* y) {
+  CHECK_GE(n, 0);
+  CHECK(x);
+  CHECK(y);
+  if( n == 0) return;
+  Dtype cumsum = 0;
+  for (size_t i = 0; i < n; ++i) {
+    cumsum += x[i];
+    y[i] = cumsum;
+  }
+}
+
+template
+void caffe_cpu_cumsum(const size_t n, const float* x, float* y);
+
+template
+void caffe_cpu_cumsum(const size_t n, const double* x, double* y);
 
 template <>
 void caffe_cpu_scale<float>(const int n, const float alpha, const float *x,

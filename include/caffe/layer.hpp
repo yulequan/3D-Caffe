@@ -19,6 +19,10 @@ namespace boost { class mutex; }
 
 namespace caffe {
 
+// forward declaration of Net (apply_deformation_layer needs a back
+// reference pointer to it)
+template<typename Dtype> class Net;
+
 /**
  * @brief An interface for the units of computation which can be composed into a
  *        Net.
@@ -38,7 +42,7 @@ class Layer {
    * layer.
    */
   explicit Layer(const LayerParameter& param)
-    : layer_param_(param), is_shared_(false) {
+    : layer_param_(param), parent_net_(0), is_shared_(false) {
       // Set phase and copy blobs (if there are any).
       phase_ = param.phase();
       if (layer_param_.blobs_size() > 0) {
@@ -316,6 +320,22 @@ class Layer {
     param_propagate_down_[param_id] = value;
   }
 
+ /**
+   * @brief get the pointer to the parent network that holds this layer
+   * (needed by apply_deformation_layer)
+   */
+  inline const Net<Dtype>* parent_net() const {
+    CHECK_NOTNULL( parent_net_);
+    return parent_net_;
+  }
+
+  /**
+   * @brief set the pointer to the parent network that holds this layer
+   * (needed by apply_deformation_layer)
+   */
+  inline void set_parent_net( const Net<Dtype>* net) {
+    parent_net_ = net;
+  }
 
  protected:
   /** The protobuf that stores the layer parameters */
@@ -330,6 +350,10 @@ class Layer {
   /** The vector that indicates whether each top blob has a non-zero weight in
    *  the objective function. */
   vector<Dtype> loss_;
+
+  /** Backreference to the parent network that holds this layer
+   * (needed by apply_deformation_layer) */
+  const Net<Dtype>* parent_net_;
 
   /** @brief Using the CPU device, compute the layer output. */
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
