@@ -2,13 +2,13 @@
 #include <cfloat>
 #include <vector>
 
-#include "caffe/layers/softmax_loss_layer.hpp"
+#include "caffe/layers/softmax_weighted_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
 
 namespace caffe {
 
 template <typename Dtype>
-void SoftmaxWithLossLayer<Dtype>::LayerSetUp(
+void SoftmaxWithWeightedLossLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::LayerSetUp(bottom, top);
   LayerParameter softmax_param(this->layer_param_);
@@ -33,10 +33,32 @@ void SoftmaxWithLossLayer<Dtype>::LayerSetUp(
   } else {
     normalization_ = this->layer_param_.loss_param().normalization();
   }
+
+  //Lequan add 
+   // read the weight for each class
+  if (this->layer_param_.loss_param().has_weight_source()) {
+    const string& weight_source = this->layer_param_.loss_param().weight_source();
+    LOG(INFO) << "Opening file " << weight_source;
+    std::fstream infile(weight_source.c_str(), std::fstream::in);
+    CHECK(infile.is_open());
+
+    Dtype tmp_val;
+    while (infile >> tmp_val) {
+      CHECK_GE(tmp_val, 0) << "Weights cannot be negative";
+      loss_weights_.push_back(tmp_val);
+    }
+    infile.close();    
+
+    CHECK_EQ(loss_weights_.size(), prob_.shape(1));
+  } else {
+    LOG(INFO) << "Weight_Loss file is not provided. Assign all one to it.";
+    loss_weights_.assign(prob_.shape(1), 1.0);
+  }
+  //end Lequan
 }
 
 template <typename Dtype>
-void SoftmaxWithLossLayer<Dtype>::Reshape(
+void SoftmaxWithWeightedLossLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::Reshape(bottom, top);
   softmax_layer_->Reshape(softmax_bottom_vec_, softmax_top_vec_);
@@ -53,10 +75,16 @@ void SoftmaxWithLossLayer<Dtype>::Reshape(
     // softmax output
     top[1]->ReshapeLike(*bottom[0]);
   }
+  //Lequan add 
+  vector<int> loss_weights_dim(1);
+  loss_weights_dim[0] = loss_weights_.size();
+  loss_weights_blob.Reshape(loss_weights_dim);
+  Dtype* loss_weights_data = loss_weights_blob.mutable_cpu_data();
+  std::copy(loss_weights_.begin(), loss_weights_.end(), loss_weights_data);
 }
 
 template <typename Dtype>
-Dtype SoftmaxWithLossLayer<Dtype>::get_normalizer(
+Dtype SoftmaxWithWeightedLossLayer<Dtype>::get_normalizer(
     LossParameter_NormalizationMode normalization_mode, int valid_count) {
   Dtype normalizer;
   switch (normalization_mode) {
@@ -86,14 +114,17 @@ Dtype SoftmaxWithLossLayer<Dtype>::get_normalizer(
 }
 
 template <typename Dtype>
-void SoftmaxWithLossLayer<Dtype>::Forward_cpu(
+void SoftmaxWithWeightedLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   // The forward pass computes the softmax prob values.
   softmax_layer_->Forward(softmax_bottom_vec_, softmax_top_vec_);
   const Dtype* prob_data = prob_.cpu_data();
   const Dtype* label = bottom[1]->cpu_data();
   int dim = prob_.count() / outer_num_;
-  int count = 0;
+  // Lequan add
+  //int count = 0;
+  Dtype batch_weight = 0;
+  //end Lequan
   Dtype loss = 0;
   for (int i = 0; i < outer_num_; ++i) {
     for (int j = 0; j < inner_num_; j++) {
@@ -103,19 +134,24 @@ void SoftmaxWithLossLayer<Dtype>::Forward_cpu(
       }
       DCHECK_GE(label_value, 0);
       DCHECK_LT(label_value, prob_.shape(softmax_axis_));
-      loss -= log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+
+      // Lequan modify
+      loss -= loss_weights_[label_value] * log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
                            Dtype(FLT_MIN)));
-      ++count;
+      //++count;
+      batch_weight += loss_weights_[label_value];
+      //end Lequan
+
     }
   }
-  top[0]->mutable_cpu_data()[0] = loss / get_normalizer(normalization_, count);
+  top[0]->mutable_cpu_data()[0] = loss / get_normalizer(normalization_, batch_weight);
   if (top.size() == 2) {
     top[1]->ShareData(prob_);
   }
 }
 
 template <typename Dtype>
-void SoftmaxWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
+void SoftmaxWithWeightedLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
   if (propagate_down[1]) {
     LOG(FATAL) << this->type()
@@ -124,35 +160,56 @@ void SoftmaxWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   if (propagate_down[0]) {
     Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
     const Dtype* prob_data = prob_.cpu_data();
-    caffe_copy(prob_.count(), prob_data, bottom_diff);
+    //Lequan modeify
+    //caffe_copy(prob_.count(), prob_data, bottom_diff);
+    // end Lequan
     const Dtype* label = bottom[1]->cpu_data();
     int dim = prob_.count() / outer_num_;
-    int count = 0;
+    
+    // Lequan add
+    //int count = 0;
+    Dtype batch_weight = 0;
+    //end Lequan
     for (int i = 0; i < outer_num_; ++i) {
       for (int j = 0; j < inner_num_; ++j) {
         const int label_value = static_cast<int>(label[i * inner_num_ + j]);
         if (has_ignore_label_ && label_value == ignore_label_) {
-          for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
-            bottom_diff[i * dim + c * inner_num_ + j] = 0;
-          }
+          //Lequan modeify
+          // for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+          //   bottom_diff[i * dim + c * inner_num_ + j] = 0;
+          // }
+          //
         } else {
-          bottom_diff[i * dim + label_value * inner_num_ + j] -= 1;
-          ++count;
+          //Lequan add 
+          // bottom_diff[i * dim + label_value * inner_num_ + j] -= 1;
+          // ++count;
+          batch_weight += loss_weights_[label_value];
+          for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+            bottom_diff[i * dim + c * inner_num_ + j] = 
+              loss_weights_[label_value] * prob_data[i * dim + c * inner_num_ + j];
+          }
+          bottom_diff[i * dim + label_value * inner_num_ + j] -= 
+            loss_weights_[label_value];
+          //end Lequan
         }
       }
     }
     // Scale gradient
+    //Lequan modify
+    //Dtype loss_weight = top[0]->cpu_diff()[0] /
+    //                    get_normalizer(normalization_, count);
     Dtype loss_weight = top[0]->cpu_diff()[0] /
-                        get_normalizer(normalization_, count);
+                        get_normalizer(normalization_, batch_weight);
+    //end Lequan
     caffe_scal(prob_.count(), loss_weight, bottom_diff);
   }
 }
 
 #ifdef CPU_ONLY
-STUB_GPU(SoftmaxWithLossLayer);
+STUB_GPU(SoftmaxWithWeightedLossLayer);
 #endif
 
-INSTANTIATE_CLASS(SoftmaxWithLossLayer);
-REGISTER_LAYER_CLASS(SoftmaxWithLoss);
+INSTANTIATE_CLASS(SoftmaxWithWeightedLossLayer);
+REGISTER_LAYER_CLASS(SoftmaxWithWeightedLoss);
 
 }  // namespace caffe

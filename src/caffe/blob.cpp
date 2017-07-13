@@ -450,6 +450,7 @@ void Blob<Dtype>::FromProto(const BlobProto& proto, bool reshape) {
         proto.has_height() || proto.has_width()) {
       // Using deprecated 4D Blob dimensions --
       // shape is (num, channels, height, width).
+    
       shape.resize(4);
       shape[0] = proto.num();
       shape[1] = proto.channels();

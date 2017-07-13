@@ -11,7 +11,7 @@
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/syncedmem.hpp"
 #include "caffe/util/math_functions.hpp"
-
+#include "iostream"
 namespace caffe {
 
 /// @brief Fills a Blob with constant or randomly-generated data.
@@ -260,7 +260,34 @@ class BilinearFiller : public Filler<Dtype> {
          << "Sparsity not supported by this Filler.";
   }
 };
+/**
+  3D bilinear filler 
+*/
+template <typename Dtype>
+class BilinearFiller_3D : public Filler<Dtype> {
+ public:
+  explicit BilinearFiller_3D(const FillerParameter& param)
+      : Filler<Dtype>(param) {}
+  virtual void Fill(Blob<Dtype>* blob) {
+    CHECK_EQ(blob->num_axes(), 5) << "Blob must be 5 dim.";
+    CHECK_EQ(blob->shape(-1), blob->shape(-2)) << "Filter must be square";
+    CHECK_EQ(blob->shape(-2), blob->shape(-3)) << "Filter must be square";
+    Dtype* data = blob->mutable_cpu_data();
 
+    int f = ceil(blob->shape(-1) / 2.);
+    float c = (2 * f - 1 - f % 2) / (2. * f);
+    for (int i = 0; i < blob->count(); ++i) {
+      float x = i % blob->shape(-1);
+      float y = (i / blob->shape(-1)) % blob->shape(-2);
+      float z = (i/(blob->shape(-1)*blob->shape(-2))) % blob->shape(-3);
+      data[i] = (1 - fabs(x / f - c)) * (1 - fabs(y / f - c)) * (1-fabs(z / f - c));
+    }
+    
+
+    CHECK_EQ(this->filler_param_.sparse(), -1)
+         << "Sparsity not supported by this Filler.";
+  }
+};
 /**
  * @brief Get a specific filler from the specification given in FillerParameter.
  *
@@ -284,6 +311,8 @@ Filler<Dtype>* GetFiller(const FillerParameter& param) {
     return new MSRAFiller<Dtype>(param);
   } else if (type == "bilinear") {
     return new BilinearFiller<Dtype>(param);
+  } else if (type == "bilinear_3D"){
+    return new BilinearFiller_3D<Dtype>(param);
   } else {
     CHECK(false) << "Unknown filler name: " << param.type();
   }

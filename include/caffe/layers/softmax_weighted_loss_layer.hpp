@@ -1,5 +1,5 @@
-#ifndef CAFFE_SOFTMAX_WITH_LOSS_LAYER_HPP_
-#define CAFFE_SOFTMAX_WITH_LOSS_LAYER_HPP_
+#ifndef CAFFE_SOFTMAX_WITH_WEIGHTED_LOSS_LAYER_HPP_
+#define CAFFE_SOFTMAX_WITH_WEIGHTED_LOSS_LAYER_HPP_
 
 #include <vector>
 
@@ -41,7 +41,7 @@ namespace caffe {
  *      @f$, for softmax output class probabilites @f$ \hat{p} @f$
  */
 template <typename Dtype>
-class SoftmaxWithLossLayer : public LossLayer<Dtype> {
+class SoftmaxWithWeightedLossLayer : public LossLayer<Dtype> {
  public:
    /**
     * @param param provides LossParameter loss_param, with options:
@@ -51,7 +51,7 @@ class SoftmaxWithLossLayer : public LossLayer<Dtype> {
     *    If true, the loss is normalized by the number of (nonignored) labels
     *    present; otherwise the loss is simply summed over spatial locations.
     */
-  explicit SoftmaxWithLossLayer(const LayerParameter& param)
+  explicit SoftmaxWithWeightedLossLayer(const LayerParameter& param)
       : LossLayer<Dtype>(param) {}
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -119,6 +119,13 @@ class SoftmaxWithLossLayer : public LossLayer<Dtype> {
   bool has_ignore_label_;
   /// The label indicating that an instance should be ignored.
   int ignore_label_;
+
+  // Lequan add
+  // the weight for different object classes when computing loss
+  std::vector<Dtype> loss_weights_;
+  Blob<Dtype> loss_weights_blob;
+  // end lequan
+
   /// How to normalize the output loss.
   LossParameter_NormalizationMode normalization_;
 
@@ -127,4 +134,4 @@ class SoftmaxWithLossLayer : public LossLayer<Dtype> {
 
 }  // namespace caffe
 
-#endif  // CAFFE_SOFTMAX_WITH_LOSS_LAYER_HPP_
+#endif  // CAFFE_SOFTMAX_WITH_WEIGHTED_LOSS_LAYER_HPP_

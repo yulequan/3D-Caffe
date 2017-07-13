@@ -6,19 +6,29 @@ package caffe;
 message BlobShape {
   repeated int64 dim = 1 [packed = true];
 }
-
+message BlobProto_C3D {
+  optional int32 num = 1 [default = 0];
+  optional int32 channels = 2 [default = 0];
+  optional int32 length = 3 [default = 0];
+  optional int32 height = 4 [default = 0];
+  optional int32 width = 5 [default = 0];
+  repeated float data = 6 [packed = true];
+  repeated float diff = 7 [packed = true];
+}
 message BlobProto {
   optional BlobShape shape = 7;
   repeated float data = 5 [packed = true];
   repeated float diff = 6 [packed = true];
   repeated double double_data = 8 [packed = true];
   repeated double double_diff = 9 [packed = true];
-
+  
   // 4D dimensions -- deprecated.  Use "shape" instead.
   optional int32 num = 1 [default = 0];
   optional int32 channels = 2 [default = 0];
   optional int32 height = 3 [default = 0];
   optional int32 width = 4 [default = 0];
+  // C3D dimensions 
+  optional BlobProto_C3D c3d = 10;
 }
 
 // The BlobProtoVector is simply a way to pass multiple blobproto instances
@@ -306,7 +316,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 143 (last added: scale_param)
+// LayerParameter next available layer-specific ID: 148 (last added: pooling_nd_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -379,6 +389,7 @@ message LayerParameter {
   optional MemoryDataParameter memory_data_param = 119;
   optional MVNParameter mvn_param = 120;
   optional PoolingParameter pooling_param = 121;
+  optional PoolingNDParameter pooling_nd_param = 147;
   optional PowerParameter power_param = 122;
   optional PReLUParameter prelu_param = 131;
   optional PythonParameter python_param = 130;
@@ -394,7 +405,50 @@ message LayerParameter {
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
   optional WindowDataParameter window_data_param = 129;
+  optional ConvupsampleParameter convupsample_param = 144;
+  optional SegAccuracyParameter seg_accuracy_param = 145;
 }
+
+// Message that stores parameters used by Convupsampleayer
+ message ConvupsampleParameter {
+   optional uint32 num_output = 1; // The number of outputs for the layer
+   optional bool bias_term = 2 [default = true]; // whether to have bias terms
+   // Pad, kernel size, and stride are all given as a single value for equal
+   // dimensions in height and width or as Y, X pairs.
+   optional uint32 pad = 3 [default = 0]; // The padding size (equal in Y, X)
+   optional uint32 pad_h = 9 [default = 0]; // The padding height
+   optional uint32 pad_w = 10 [default = 0]; // The padding width
+   optional uint32 kernel_size = 4; // The kernel size (square)
+   optional uint32 kernel_h = 11; // The kernel height
+   optional uint32 kernel_w = 12; // The kernel width
+   optional uint32 group = 5 [default = 1]; // The group size for group conv
+   optional uint32 stride = 6 [default = 1]; // The stride (equal in Y, X)
+   optional uint32 stride_h = 13; // The stride height
+   optional uint32 stride_w = 14; // The stride width
+   optional FillerParameter weight_filler = 7; // The filler for the weight
+   optional FillerParameter bias_filler = 8; // The filler for the bias
+   optional uint32 num_output_h = 16;//The expected output size h
+   optional uint32 num_output_w =17;//The expected output size w
+   enum Engine {
+     DEFAULT = 0;
+     CAFFE = 1;
+     CUDNN = 2;
+   }
+   optional Engine engine = 15 [default = DEFAULT];
+ }
+
+// Message that stores parametres used by SegAccuracyLayer
+ message SegAccuracyParameter {
+   enum AccuracyMetric {
+     PixelAccuracy = 0;
+     ClassAccuracy = 1;
+     PixelIOU = 2;
+   }
+   optional AccuracyMetric metric = 1 [default = PixelAccuracy];
+   // will ignore pixels with this value when computing accuracy
+   repeated int32 ignore_label = 2;
+ }
+
 
 // Message that stores parameters used to apply transformation
 // to the data layer's data
@@ -417,12 +471,18 @@ message TransformationParameter {
   optional bool force_color = 6 [default = false];
   // Force the decoded image to have 1 color channels.
   optional bool force_gray = 7 [default = false];
+  optional uint32 crop_size_w = 8 [default = 0];
+  optional uint32 crop_size_h = 9 [default = 0];
+  optional uint32 crop_size_l = 10 [default = 0];
+
 }
 
 // Message that stores parameters shared by loss layers
 message LossParameter {
   // If specified, ignore instances with the given label.
   optional int32 ignore_label = 1;
+  // specify the data source for loss_weights_
+  optional string weight_source = 16;
   // How to normalize the loss for loss layers that aggregate across batches,
   // spatial dimensions, or other dimensions.  Currently only implemented in
   // SoftmaxWithLoss layer.
@@ -769,6 +829,14 @@ message ImageDataParameter {
   // data.
   optional bool mirror = 6 [default = false];
   optional string root_folder = 12 [default = ""];
+  enum LabelType {
+     NONE = 0;
+     IMAGE = 1;
+     PIXEL = 2;
+     BBX = 3;
+   }
+  optional LabelType label_type = 13 [default = IMAGE];
+  optional int32 ignore_label = 14 [default = 255];
 }
 
 message InfogainLossParameter {
@@ -862,6 +930,41 @@ message PoolingParameter {
   // If global_pooling then it will pool over the size of the bottom by doing
   // kernel_h = bottom->height and kernel_w = bottom->width
   optional bool global_pooling = 12 [default = false];
+}
+message PoolingNDParameter {
+  enum PoolMethod {
+    MAX = 0;
+    AVE = 1;
+    STOCHASTIC = 2;
+  }
+  optional PoolMethod pool = 1 [default = MAX]; // The pooling method
+  // Pad, kernel size, and stride are all given as a single value for equal
+  // dimensions in all spatial dimensions, or once per spatial dimension.
+  repeated uint32 pad = 2; // The padding size defaults to 0
+  repeated uint32 kernel_size = 3; // The kernel size (square)
+  repeated uint32 stride = 4; // defaults to 1
+  
+  // For 2D pooling only, the *_h and *_w versions may also be used to
+  // specify both spatial dimensions.
+  optional uint32 pad_h = 5 [default = 0]; // The padding height (2D only)
+  optional uint32 pad_w = 6 [default = 0]; // The padding width (2D only)
+  optional uint32 kernel_h = 7; // The kernel height (2D only)
+  optional uint32 kernel_w = 8; // The kernel width (2D only)
+  optional uint32 stride_h = 9; // The stride height (2D only)
+  optional uint32 stride_w = 10; // The stride width (2D only)
+  enum Engine {
+    DEFAULT = 0;
+    CAFFE = 1;
+    CUDNN = 2;
+  }
+  optional Engine engine = 11 [default = DEFAULT];
+  // If global_pooling then it will pool over the size of the bottom by doing
+  // kernel_h = bottom->height and kernel_w = bottom->width
+  optional bool global_pooling = 12 [default = false];
+  // The axis to interpret as "channels" when performing pooling.
+  // Preceding dimensions are treated as independent inputs;
+  // succeeding dimensions are treated as "spatial".
+  optional int32 axis = 13 [default = 1];
 }
 
 message PowerParameter {
@@ -1229,6 +1332,7 @@ message V1LayerParameter {
   optional TransformationParameter transform_param = 36;
   optional LossParameter loss_param = 42;
   optional V0LayerParameter layer = 1;
+
 }
 
 // DEPRECATED: V0LayerParameter is the old way of specifying layer parameters
@@ -1333,4 +1437,12 @@ message PReLUParameter {
   optional FillerParameter filler = 1;
   // Whether or not slope paramters are shared across channels.
   optional bool channel_shared = 2 [default = false];
+}
+
+// Message that stores parametres used by SoftmaxWithLossLayer
+message SoftmaxLossParameter {
+  // specify the data source for loss_weights_
+  optional string weight_source = 16;
+  // will ignore pixels with this value when computing accuracy
+  repeated int32 ignore_label = 2;
 }

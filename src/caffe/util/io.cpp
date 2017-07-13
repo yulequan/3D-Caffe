@@ -88,6 +88,26 @@ cv::Mat ReadImageToCVMat(const string& filename,
   return cv_img;
 }
 
+//Lequan add 
+cv::Mat ReadImageToCVMatNearest(const string& filename,
+    const int height, const int width, const bool is_color) {
+  cv::Mat cv_img;
+  int cv_read_flag = (is_color ? CV_LOAD_IMAGE_COLOR :
+    CV_LOAD_IMAGE_GRAYSCALE);
+  cv::Mat cv_img_origin = cv::imread(filename, cv_read_flag);
+  if (!cv_img_origin.data) {
+    LOG(ERROR) << "Could not open or find file " << filename;
+    return cv_img_origin;
+  }
+  if (height > 0 && width > 0) {
+    cv::resize(cv_img_origin, cv_img, cv::Size(width, height),0,0,cv::INTER_NEAREST);
+  } else {
+    cv_img = cv_img_origin;
+  }
+  return cv_img;
+}
+//Lequan end 
+
 cv::Mat ReadImageToCVMat(const string& filename,
     const int height, const int width) {
   return ReadImageToCVMat(filename, height, width, true);

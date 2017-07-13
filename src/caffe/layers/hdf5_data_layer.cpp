@@ -37,11 +37,34 @@ void HDF5DataLayer<Dtype>::LoadHDF5FileData(const char* filename) {
   const int MIN_DATA_DIM = 1;
   const int MAX_DATA_DIM = INT_MAX;
 
+
+  // for (int i = 0; i < top_size; ++i) {
+  //   hdf_blobs_[i] = shared_ptr<Blob<Dtype> >(new Blob<Dtype>());
+  //   hdf5_load_nd_dataset(file_id, this->layer_param_.top(i).c_str(),
+  //       MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i].get());
+  // }
+  // TODO do random segmentation
+  // Lequan add 
+  const bool has_crop = this->layer_param_.transform_param().has_crop_size_w();
+  vector<shared_ptr<Blob<Dtype> > > hdf_input_blobs;
+  hdf_input_blobs.resize(top_size);
   for (int i = 0; i < top_size; ++i) {
     hdf_blobs_[i] = shared_ptr<Blob<Dtype> >(new Blob<Dtype>());
-    hdf5_load_nd_dataset(file_id, this->layer_param_.top(i).c_str(),
-        MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i].get());
+    hdf_input_blobs[i] = shared_ptr<Blob<Dtype> >(new Blob<Dtype>());
+    if(has_crop)
+      hdf5_load_nd_dataset(file_id, this->layer_param_.top(i).c_str(),
+          MIN_DATA_DIM, MAX_DATA_DIM, hdf_input_blobs[i].get());
+    else
+      hdf5_load_nd_dataset(file_id, this->layer_param_.top(i).c_str(),
+          MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i].get());      
   }
+  if (has_crop)
+    if(top_size==2)
+      HDF5DataTransform(hdf_input_blobs[0].get(),hdf_blobs_[0].get(),hdf_input_blobs[1].get(),hdf_blobs_[1].get());
+    if(top_size==3)
+      HDF5DataTransform2(hdf_input_blobs[0].get(),hdf_blobs_[0].get(),hdf_input_blobs[1].get(),hdf_blobs_[1].get(),
+       hdf_input_blobs[2].get(),hdf_blobs_[2].get());
+  // Lequan end add
 
   herr_t status = H5Fclose(file_id);
   CHECK_GE(status, 0) << "Failed to close HDF5 file: " << filename;
@@ -71,9 +94,9 @@ void HDF5DataLayer<Dtype>::LoadHDF5FileData(const char* filename) {
 template <typename Dtype>
 void HDF5DataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
-  // Refuse transformation parameters since HDF5 is totally generic.
-  CHECK(!this->layer_param_.has_transform_param()) <<
-      this->type() << " does not transform data.";
+  // // Refuse transformation parameters since HDF5 is totally generic.
+  // CHECK(!this->layer_param_.has_transform_param()) <<
+  //     this->type() << " does not transform data.";
   // Read the source to parse the filenames.
   const string& source = this->layer_param_.hdf5_data_param().source();
   LOG(INFO) << "Loading list of HDF5 filenames from: " << source;
@@ -154,6 +177,373 @@ void HDF5DataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
             * data_dim], &top[j]->mutable_cpu_data()[i * data_dim]);
     }
   }
+}
+
+template<typename Dtype>
+void HDF5DataLayer<Dtype>::HDF5DataTransform(Blob<Dtype>* input_blob_data, Blob<Dtype>* transformed_blob_data,
+                       Blob<Dtype>* input_blob_label, Blob<Dtype>* transformed_blob_label){
+  
+  std::vector<int> transformed_data_shape = input_blob_data->shape();
+  std::vector<int> transformed_label_shape = input_blob_label->shape();
+  
+  TransformationParameter transform_param = this->layer_param_.transform_param();
+  bool has_crop_size  = transform_param.has_crop_size_w();
+  const int crop_size_w = transform_param.crop_size_w();
+  const int crop_size_h = transform_param.crop_size_h();
+  const int crop_size_l = transform_param.crop_size_l();
+  if (has_crop_size){
+      transformed_data_shape[2] = crop_size_l;
+      transformed_data_shape[3] = crop_size_h;
+      transformed_data_shape[4] = crop_size_w;
+      transformed_label_shape[2] = crop_size_l;
+      transformed_label_shape[3] = crop_size_h;
+      transformed_label_shape[4] = crop_size_w;
+  }
+  
+
+  if (transformed_blob_data->count() == 0) {
+    // Initialize transformed_blob_data with the right shape.
+    if (has_crop_size) {
+      transformed_blob_data->Reshape(transformed_data_shape);
+      transformed_blob_label->Reshape(transformed_label_shape);
+    } else {
+      transformed_blob_data->ReshapeLike(*input_blob_data);
+      transformed_blob_label->ReshapeLike(*input_blob_label);
+    }
+  }
+  
+  const int input_num = input_blob_data->shape(0);
+  const int input_channels = input_blob_data->shape(1);
+  const int input_length = input_blob_data->shape(2);
+  const int input_height = input_blob_data->shape(3);
+  const int input_width = input_blob_data->shape(4);
+
+  const int num = transformed_blob_data->shape(0);
+  const int channels = transformed_blob_data->shape(1);
+  const int length  = transformed_blob_data->shape(2);
+  const int height = transformed_blob_data->shape(3);
+  const int width = transformed_blob_data->shape(4);
+  const int size = transformed_blob_data->count();
+
+  CHECK_LE(transformed_data_shape[0], num);
+  CHECK_EQ(transformed_data_shape[1], channels);
+  CHECK_GE(transformed_data_shape[2], length);
+  CHECK_GE(transformed_data_shape[3], height);
+  CHECK_GE(transformed_data_shape[4], width);
+
+
+  const Dtype scale = transform_param.scale();
+  const bool do_mirror = transform_param.mirror() && Rand(2);
+  const bool has_mean_value = transform_param.mean_value_size() > 0;
+
+  int h_off = 0;
+  int w_off = 0;
+  int l_off = 0;
+  if (has_crop_size) {
+    CHECK_EQ(crop_size_l, length);
+    CHECK_EQ(crop_size_h, height);
+    CHECK_EQ(crop_size_w, width);
+    // We only do random crop when we do training.
+    if (this->phase_ == TRAIN) {
+      l_off = Rand(input_length - crop_size_l + 1);
+      h_off = Rand(input_height - crop_size_h + 1);
+      w_off = Rand(input_width  - crop_size_w + 1);
+    } else {
+      l_off = (input_length - crop_size_l) /2;
+      h_off = (input_height - crop_size_h) / 2;
+      w_off = (input_width  - crop_size_w) / 2;
+    }
+  } else {
+    CHECK_EQ(input_length, length);
+    CHECK_EQ(input_height, height);
+    CHECK_EQ(input_width, width);
+  }
+  
+  // transform data
+  Dtype* input_data = input_blob_data->mutable_cpu_data();
+  if (has_mean_value) {
+   // LOG(INFO) << "has mean value.";
+    CHECK(transform_param.mean_value_size() == 1 || transform_param.mean_value_size() == input_channels) <<
+     "Specify either 1 mean_value or as many as channels: " << input_channels;
+    if (transform_param.mean_value_size() == 1) {
+      caffe_add_scalar(input_blob_data->count(), -((Dtype)transform_param.mean_value(0)), input_data);
+    } else {
+      for (int n = 0; n < input_num; ++n) {
+        for (int c = 0; c < input_channels; ++c) {
+          int offset = (n*input_channels+c)*input_length*input_height*input_width;
+          caffe_add_scalar(input_length*input_height * input_width, -((Dtype)transform_param.mean_value(c)),
+            input_data + offset);
+        }
+      }
+    }
+  }
+
+  Dtype* transformed_data = transformed_blob_data->mutable_cpu_data();
+
+  for (int n = 0; n < input_num; ++n) {
+    int top_index_n = n * channels;
+    int data_index_n = n * channels;
+    for (int c = 0; c < channels; ++c) {
+      int top_index_c = (top_index_n + c) * length;
+      int data_index_c = (data_index_n + c) * input_length + l_off;
+      for (int l = 0; l < length; l++){
+        int top_index_l = (top_index_c + l) * height;
+        int data_index_l = (data_index_c + l) * input_height + h_off;
+        for (int h = 0; h < height; ++h) {
+          int top_index_h = (top_index_l + h) * width;
+          int data_index_h = (data_index_l + h) * input_width + w_off;
+          if (do_mirror) {
+            int top_index_w = top_index_h + width - 1;
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_w-w] = input_data[data_index_h + w];
+            }
+          } else {
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_h + w] = input_data[data_index_h + w];
+            }
+          }
+        }
+      }
+    }
+  }
+  if (scale != Dtype(1)) {
+    DLOG(INFO) << "Scale: " << scale;
+    caffe_scal(size, scale, transformed_data);
+  }
+
+  // transform label
+  const int label_channels = transformed_blob_label->shape(1);
+  input_data = input_blob_label->mutable_cpu_data();
+  transformed_data = transformed_blob_label->mutable_cpu_data();
+  for (int n = 0; n < input_num; ++n) {
+    int top_index_n = n * label_channels;
+    int data_index_n = n * label_channels;
+    for (int c = 0; c < label_channels; ++c) {
+      int top_index_c = (top_index_n + c) * length;
+      int data_index_c = (data_index_n + c) * input_length + l_off;
+      for (int l = 0; l < length; l++){
+        int top_index_l = (top_index_c + l) * height;
+        int data_index_l = (data_index_c + l) * input_height + h_off;
+        for (int h = 0; h < height; ++h) {
+          int top_index_h = (top_index_l + h) * width;
+          int data_index_h = (data_index_l + h) * input_width + w_off;
+          if (do_mirror) {
+            int top_index_w = top_index_h + width - 1;
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_w-w] = input_data[data_index_h + w];
+            }
+          } else {
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_h + w] = input_data[data_index_h + w];
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+template<typename Dtype>
+void HDF5DataLayer<Dtype>::HDF5DataTransform2(Blob<Dtype>* input_blob_data, Blob<Dtype>* transformed_blob_data,
+                       Blob<Dtype>* input_blob_label1, Blob<Dtype>* transformed_blob_label1,
+                       Blob<Dtype>* input_blob_label2, Blob<Dtype>* transformed_blob_label2){
+  std::vector<int> transformed_data_shape = input_blob_data->shape();
+  std::vector<int> transformed_label1_shape = input_blob_label1->shape();
+  std::vector<int> transformed_label2_shape = input_blob_label2->shape();
+  
+  TransformationParameter transform_param = this->layer_param_.transform_param();
+  bool has_crop_size  = transform_param.has_crop_size_w();
+  const int crop_size_w = transform_param.crop_size_w();
+  const int crop_size_h = transform_param.crop_size_h();
+  const int crop_size_l = transform_param.crop_size_l();
+  if (has_crop_size){
+      transformed_data_shape[2] = crop_size_l;
+      transformed_data_shape[3] = crop_size_h;
+      transformed_data_shape[4] = crop_size_w;
+      transformed_label1_shape[2] = crop_size_l;
+      transformed_label1_shape[3] = crop_size_h;
+      transformed_label1_shape[4] = crop_size_w;
+      transformed_label2_shape[2] = crop_size_l;
+      transformed_label2_shape[3] = crop_size_h;
+      transformed_label2_shape[4] = crop_size_w;
+  }
+  if (transformed_blob_data->count() == 0) {
+    // Initialize transformed_blob_data with the right shape.
+    if (has_crop_size) {
+      transformed_blob_data->Reshape(transformed_data_shape);
+      transformed_blob_label1->Reshape(transformed_label1_shape);
+      transformed_blob_label2->Reshape(transformed_label2_shape);
+    } else {
+      transformed_blob_data->ReshapeLike(*input_blob_data);
+      transformed_blob_label1->ReshapeLike(*input_blob_label1);
+      transformed_blob_label2->ReshapeLike(*input_blob_label2);
+    }
+  }
+  const int input_num = input_blob_data->shape(0);
+  const int input_channels = input_blob_data->shape(1);
+  const int input_length = input_blob_data->shape(2);
+  const int input_height = input_blob_data->shape(3);
+  const int input_width = input_blob_data->shape(4);
+
+  const int num = transformed_blob_data->shape(0);
+  const int channels = transformed_blob_data->shape(1);
+  const int length  = transformed_blob_data->shape(2);
+  const int height = transformed_blob_data->shape(3);
+  const int width = transformed_blob_data->shape(4);
+  const int size = transformed_blob_data->count();
+
+  CHECK_LE(transformed_data_shape[0], num);
+  CHECK_EQ(transformed_data_shape[1], channels);
+  CHECK_GE(transformed_data_shape[2], length);
+  CHECK_GE(transformed_data_shape[3], height);
+  CHECK_GE(transformed_data_shape[4], width);
+
+
+  const Dtype scale = transform_param.scale();
+  const bool do_mirror = transform_param.mirror() && Rand(2);
+  const bool has_mean_value = transform_param.mean_value_size() > 0;
+  int h_off = 0;
+  int w_off = 0;
+  int l_off = 0;
+  if (has_crop_size) {
+    CHECK_EQ(crop_size_l, length);
+    CHECK_EQ(crop_size_h, height);
+    CHECK_EQ(crop_size_w, width);
+    // We only do random crop when we do training.
+    if (this->phase_ == TRAIN) {
+      l_off = Rand(input_length - crop_size_l + 1);
+      h_off = Rand(input_height - crop_size_h + 1);
+      w_off = Rand(input_width  - crop_size_w + 1);
+    } else {
+      l_off = (input_length - crop_size_l) /2;
+      h_off = (input_height - crop_size_h) / 2;
+      w_off = (input_width  - crop_size_w) / 2;
+    }
+  } else {
+    CHECK_EQ(input_length, length);
+    CHECK_EQ(input_height, height);
+    CHECK_EQ(input_width, width);
+  }
+  
+  // transform data
+  Dtype* input_data = input_blob_data->mutable_cpu_data();
+  if (has_mean_value) {
+   // LOG(INFO) << "has mean value.";
+    CHECK(transform_param.mean_value_size() == 1 || transform_param.mean_value_size() == input_channels) <<
+     "Specify either 1 mean_value or as many as channels: " << input_channels;
+    if (transform_param.mean_value_size() == 1) {
+      caffe_add_scalar(input_blob_data->count(), -((Dtype)transform_param.mean_value(0)), input_data);
+    } else {
+      for (int n = 0; n < input_num; ++n) {
+        for (int c = 0; c < input_channels; ++c) {
+          int offset = (n*input_channels+c)*input_length*input_height*input_width;
+          caffe_add_scalar(input_length*input_height * input_width, -((Dtype)transform_param.mean_value(c)),
+            input_data + offset);
+        }
+      }
+    }
+  }
+
+  Dtype* transformed_data = transformed_blob_data->mutable_cpu_data();
+
+  for (int n = 0; n < input_num; ++n) {
+    int top_index_n = n * channels;
+    int data_index_n = n * channels;
+    for (int c = 0; c < channels; ++c) {
+      int top_index_c = (top_index_n + c) * length;
+      int data_index_c = (data_index_n + c) * input_length + l_off;
+      for (int l = 0; l < length; l++){
+        int top_index_l = (top_index_c + l) * height;
+        int data_index_l = (data_index_c + l) * input_height + h_off;
+        for (int h = 0; h < height; ++h) {
+          int top_index_h = (top_index_l + h) * width;
+          int data_index_h = (data_index_l + h) * input_width + w_off;
+          if (do_mirror) {
+            int top_index_w = top_index_h + width - 1;
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_w-w] = input_data[data_index_h + w];
+            }
+          } else {
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_h + w] = input_data[data_index_h + w];
+            }
+          }
+        }
+      }
+    }
+  }
+  if (scale != Dtype(1)) {
+    DLOG(INFO) << "Scale: " << scale;
+    caffe_scal(size, scale, transformed_data);
+  }
+
+  // transform label1
+  const int label1_channels = transformed_blob_label1->shape(1);
+  input_data = input_blob_label1->mutable_cpu_data();
+  transformed_data = transformed_blob_label1->mutable_cpu_data();
+  for (int n = 0; n < input_num; ++n) {
+    int top_index_n = n * label1_channels;
+    int data_index_n = n * label1_channels;
+    for (int c = 0; c < label1_channels; ++c) {
+      int top_index_c = (top_index_n + c) * length;
+      int data_index_c = (data_index_n + c) * input_length + l_off;
+      for (int l = 0; l < length; l++){
+        int top_index_l = (top_index_c + l) * height;
+        int data_index_l = (data_index_c + l) * input_height + h_off;
+        for (int h = 0; h < height; ++h) {
+          int top_index_h = (top_index_l + h) * width;
+          int data_index_h = (data_index_l + h) * input_width + w_off;
+          if (do_mirror) {
+            int top_index_w = top_index_h + width - 1;
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_w-w] = input_data[data_index_h + w];
+            }
+          } else {
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_h + w] = input_data[data_index_h + w];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // transform label2
+  const int label2_channels = transformed_blob_label2->shape(1);
+  input_data = input_blob_label2->mutable_cpu_data();
+  transformed_data = transformed_blob_label2->mutable_cpu_data();
+  for (int n = 0; n < input_num; ++n) {
+    int top_index_n = n * label2_channels;
+    int data_index_n = n * label2_channels;
+    for (int c = 0; c < label2_channels; ++c) {
+      int top_index_c = (top_index_n + c) * length;
+      int data_index_c = (data_index_n + c) * input_length + l_off;
+      for (int l = 0; l < length; l++){
+        int top_index_l = (top_index_c + l) * height;
+        int data_index_l = (data_index_c + l) * input_height + h_off;
+        for (int h = 0; h < height; ++h) {
+          int top_index_h = (top_index_l + h) * width;
+          int data_index_h = (data_index_l + h) * input_width + w_off;
+          if (do_mirror) {
+            int top_index_w = top_index_h + width - 1;
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_w-w] = input_data[data_index_h + w];
+            }
+          } else {
+            for (int w = 0; w < width; ++w) {
+              transformed_data[top_index_h + w] = input_data[data_index_h + w];
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+template <typename Dtype>
+int HDF5DataLayer<Dtype>::Rand(int n) {
+  return rand()%n;
 }
 
 #ifdef CPU_ONLY
