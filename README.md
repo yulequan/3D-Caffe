@@ -15,7 +15,7 @@ Besides, This version also includes the following modification:
 
 ### Installation
 
-1. Clone the respository and checkout 3D-Caffe branch
+1. Clone the respository and checkout ``3D-Caffe`` branch
   ```shell
   git clone https://github.com/yulequan/3D-Caffe/
   cd 3D-Caffe
@@ -31,7 +31,7 @@ Besides, This version also includes the following modification:
 
 For other installation issues, please follow the offical instructions of [Caffe](http://caffe.berkeleyvision.org/installation.html).
 
-It has been tested successfully on Ubuntu 14.04 with CUDA 8.0 and CuDNN 5.0.
+It has been tested successfully on Ubuntu 14.04 with a) CUDA 8.0 and CuDNN 5.0; b) CUDA 7.5 and CuDNN4.0.
 
 ### Note
 - We use **HDF5DataLayer** to read data when we do 3D operation. You need to generate the hdf5 data from original data type. You can refer [this](https://github.com/BVLC/caffe/tree/master/matlab/hdf5creation) to generate your own h5 data using Matlab.
