@@ -38,7 +38,7 @@ It has been tested successfully on Ubuntu 14.04 with a) CUDA 8.0 and CuDNN 5.0; 
 
 - We use **HDF5DataLayer** to read data when doing 3D operation. You need to generate the hdf5 data from original data type. You can refer [this](https://github.com/BVLC/caffe/tree/master/matlab/hdf5creation) to generate your own h5 data using Matlab.
 
-- You can refer the [HeartSeg] (https://github.com/yulequan/HeartSeg) project as a demo on usage of this 3D-Caffe and generating the h5 file.
+- You can refer the [HeartSeg](https://github.com/yulequan/HeartSeg) project as a demo on usage of this 3D-Caffe and generating the h5 file.
 
 ### Reference code
 * [U-Net code](https://lmb.informatik.uni-freiburg.de/resources/opensource/unet.en.html)
