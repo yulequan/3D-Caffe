@@ -1,37 +1,44 @@
-# Caffe
+## 3D-Caffe
 
-[![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
-[![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
+The 3D Caffe library with supporting the 3D operations (Conv and Deconv).
 
-Caffe is a deep learning framework made with expression, speed, and modularity in mind.
-It is developed by the Berkeley Vision and Learning Center ([BVLC](http://bvlc.eecs.berkeley.edu)) and community contributors.
+### Modification
+* ND support for CuDNN engine in "Convolution" layer 
+* CuDNN engine for layer "Deconvolution"
+* Support for ND pooling in 'Pooling' layer
+* Add randomly cropping operation in "HDF5DataLayer"
 
-Check out the [project site](http://caffe.berkeleyvision.org) for all the details like
+Besides, This version also includes the following modification:
 
-- [DIY Deep Learning for Vision with Caffe](https://docs.google.com/presentation/d/1UeKXVgRvvxg9OUdh_UiC5G71UMscNPlvArsWER41PsU/edit#slide=id.p)
-- [Tutorial Documentation](http://caffe.berkeleyvision.org/tutorial/)
-- [BVLC reference models](http://caffe.berkeleyvision.org/model_zoo.html) and the [community model zoo](https://github.com/BVLC/caffe/wiki/Model-Zoo)
-- [Installation instructions](http://caffe.berkeleyvision.org/installation.html)
+* Add a weighted softmax loss layer
+* Add ImageSeg dataLayer to read image and segmentation mask
 
-and step-by-step examples.
+### Installation
 
-[![Join the chat at https://gitter.im/BVLC/caffe](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/BVLC/caffe?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+1. Clone the respository and checkout ``3D-Caffe`` branch
+  ```shell
+  git clone https://github.com/yulequan/3D-Caffe/
+  cd 3D-Caffe
+  git checkout 3D-Caffe
+  ```
+2. Build Caffe
+  ```shell
+  cp Makefile.config.example Makefile.config
+  vim Makefile.config
+  ##uncomment USE_CUDNN := 1 if you want to use CuDNN
+  make -j8
+  ```
 
-Please join the [caffe-users group](https://groups.google.com/forum/#!forum/caffe-users) or [gitter chat](https://gitter.im/BVLC/caffe) to ask questions and talk about methods and models.
-Framework development discussions and thorough bug reports are collected on [Issues](https://github.com/BVLC/caffe/issues).
+For other installation issues, please follow the offical instructions of [Caffe](http://caffe.berkeleyvision.org/installation.html).
 
-Happy brewing!
+It has been tested successfully on Ubuntu 14.04 with a) CUDA 8.0 and CuDNN 5.0; b) CUDA 7.5 and CuDNN4.0.
 
-## License and Citation
+### Note
+- Remember to use ```git checkout 3D-Caffe```. Otherwise, you only compile the offical Caffe version.
 
-Caffe is released under the [BSD 2-Clause license](https://github.com/BVLC/caffe/blob/master/LICENSE).
-The BVLC reference models are released for unrestricted use.
+- We use **HDF5DataLayer** to read data when doing 3D operation. You need to generate the hdf5 data from original data type. You can refer [this](https://github.com/BVLC/caffe/tree/master/matlab/hdf5creation) to generate your own h5 data using Matlab.
 
-Please cite Caffe in your publications if it helps your research:
+- You can refer the [HeartSeg](https://github.com/yulequan/HeartSeg) project as a demo on usage of this 3D-Caffe and generating the h5 file.
 
-    @article{jia2014caffe,
-      Author = {Jia, Yangqing and Shelhamer, Evan and Donahue, Jeff and Karayev, Sergey and Long, Jonathan and Girshick, Ross and Guadarrama, Sergio and Darrell, Trevor},
-      Journal = {arXiv preprint arXiv:1408.5093},
-      Title = {Caffe: Convolutional Architecture for Fast Feature Embedding},
-      Year = {2014}
-    }
+### Reference code
+* [U-Net code](https://lmb.informatik.uni-freiburg.de/resources/opensource/unet.en.html)
