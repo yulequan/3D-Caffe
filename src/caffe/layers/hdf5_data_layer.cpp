@@ -58,12 +58,13 @@ void HDF5DataLayer<Dtype>::LoadHDF5FileData(const char* filename) {
       hdf5_load_nd_dataset(file_id, this->layer_param_.top(i).c_str(),
           MIN_DATA_DIM, MAX_DATA_DIM, hdf_blobs_[i].get());      
   }
-  if (has_crop)
+  if (has_crop){
     if(top_size==2)
       HDF5DataTransform(hdf_input_blobs[0].get(),hdf_blobs_[0].get(),hdf_input_blobs[1].get(),hdf_blobs_[1].get());
     if(top_size==3)
       HDF5DataTransform2(hdf_input_blobs[0].get(),hdf_blobs_[0].get(),hdf_input_blobs[1].get(),hdf_blobs_[1].get(),
        hdf_input_blobs[2].get(),hdf_blobs_[2].get());
+  }
   // Lequan end add
 
   herr_t status = H5Fclose(file_id);
